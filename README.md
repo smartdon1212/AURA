@@ -21,6 +21,12 @@ exchange — from your keypress until it finishes answering — so it never
 talks over you, and never records its own voice back as though you had
 said it.
 
+It follows the thread too. The last ten exchanges are carried into every
+answer, so "what did I ask you a moment ago" is answered from what was
+actually said rather than from nothing. That record is kept strictly
+apart from what it has observed — a question about a cat never becomes a
+memory of having seen one.
+
 ## Architecture (see contracts/ for the source of truth)
 
 ```
@@ -165,8 +171,11 @@ needed — the bus, camera, detector and speaker are all stubbed.
   A naive energy-threshold VAD misfires on real room noise, so this
   waits until the fixed-window baseline is proven end to end.
 - **Answers draw on a recent window, not all of memory** — the last 10
-  minutes of observations, capped at 50 rows. Recalling something from
-  last week needs the semantic layer above.
+  minutes of observations, capped at 50 rows, and the last 10 exchanges.
+  Recalling something from last week needs the semantic layer above.
+  Conversation history is a fixed window too, and it is a *transcript*
+  store, not fact extraction: it exists so she can follow the thread, not
+  so she can recite a long history.
 - **The web interface is local-only and unauthenticated** — bound to
   `127.0.0.1` with no login, which is the right trade for a personal
   system on one machine and the wrong one for a LAN. A LAN address would
