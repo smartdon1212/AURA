@@ -1,0 +1,41 @@
+# Local launcher scripts.
+#
+# start-claude.sh lived here and carried a live bearer token in plaintext
+# (audit finding F-1). It was deleted before the first commit, so the value
+# never entered history. This rule is defence for the future: any launcher
+# that exports credentials belongs outside version control.
+start-*.sh
+
+# Environment files — secrets belong in the environment, never in source.
+# EpisodicMemory reads AURA_PG_PASSWORD and the Mind reads GEMINI_API_KEY
+# from the environment for exactly this reason (memory/episodic/store.py).
+.env
+.env.*
+*.env
+
+# Python bytecode and build artefacts.
+# These rules follow the standard github/gitignore "Python" template rather
+# than an improvised list, so the set stays complete as the project grows.
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtualenv. uv sync rebuilds it from pyproject.toml + uv.lock, so it is
+# derived state and never belongs in history.
+.venv/
+venv/
+
+# Packaging output.
+build/
+dist/
+*.egg-info/
+
+# Tool caches.
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Model weights. ultralytics re-downloads yolov8n.pt on first run, so this
+# is a regenerable artefact, not source — and it is large enough that
+# committing it would bloat every future clone.
+*.pt

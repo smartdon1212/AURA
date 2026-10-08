@@ -1,0 +1,41 @@
+[project]
+name = "aura"
+version = "0.1.0"
+description = "AURA — vision-first, body-agnostic cognitive AI companion"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic>=2.7",
+    "opencv-python>=4.10",
+    "ultralytics>=8.3",
+    "torch>=2.3",
+    "redis>=5.0",
+    "anthropic>=0.40",
+    "google-genai>=0.3",
+    # Imported directly by mind/llm_provider/gemini_provider.py to catch
+    # httpx.TransportError around the Gemini calls. It arrives transitively
+    # via google-genai, but catching its exceptions means depending on it,
+    # so it is declared rather than borrowed.
+    "httpx>=0.28",
+    "psycopg[binary]>=3.1",
+    "pyttsx3>=2.90",
+    "sounddevice>=0.4.6",
+    "tenacity>=8.2",
+    # The web Body's HTTP surface (bodies/web/app.py). FastAPI + uvicorn
+    # rather than http.server: SSE, multipart MJPEG and running blocking
+    # handlers off the event loop are all standard in a real framework,
+    # and hand-rolling them is how you get a server that stalls the whole
+    # page behind one slow Gemini call.
+    "fastapi>=0.115",
+    # Plain uvicorn, not uvicorn[standard]. The extra pulls uvloop (which
+    # is Unix-only and unused on Windows), httptools, watchfiles and
+    # websockets — and this Body deliberately has no WebSocket in it. See
+    # bodies/web/app.py for why the transports are SSE + MJPEG instead.
+    "uvicorn>=0.32",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["contracts"]

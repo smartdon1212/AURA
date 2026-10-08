@@ -1,0 +1,460 @@
+/*
+ * AURA web Body — the interface.
+ *
+ * Dark, single page, no framework and no web fonts: the whole thing is
+ * served from the Body process, so every external asset would be one more
+ * thing that can fail to load and leave a half-drawn face. System font
+ * stacks only.
+ *
+ * Layout rule: the orb owns the centre and everything else is chrome
+ * around its edges. When the camera panel opens the orb *docks* into the
+ * corner rather than shrinking in place, so the page never reflows and
+ * the face stays visible while you watch the feed.
+ */
+
+:root {
+  --bg: #05070c;
+  --bg-panel: rgba(10, 16, 26, 0.82);
+  --line: rgba(90, 160, 200, 0.22);
+  --line-bright: rgba(120, 200, 240, 0.45);
+  --text: #cfe6f2;
+  --text-dim: #6f8ba0;
+  --cyan: #38e8ff;
+  --violet: #8b5cf6;
+  --amber: #ffb020;
+  --accent: var(--cyan);
+  --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas,
+    "SF Mono", Menlo, monospace;
+}
+
+/* The orb's state drives one variable, and the chrome follows it. That is
+ * why the whole frame changes colour when AURA starts thinking. */
+html[data-aura-state="thinking"] { --accent: var(--amber); }
+html[data-aura-state="speaking"] { --accent: var(--violet); }
+html[data-aura-state="listening"] { --accent: #5ff0ff; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- background layers ---------- */
+
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(56, 232, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 232, 255, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at 50% 45%, #000 0%, transparent 78%);
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 0%, transparent 78%);
+}
+
+.bg-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 45%, transparent 35%, #05070c 100%);
+}
+
+.scanlines {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.028) 0px,
+    rgba(255, 255, 255, 0.028) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* ---------- header ---------- */
+
+.hud {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(to bottom, rgba(5, 8, 14, 0.9), transparent);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  transition: background 0.4s linear, box-shadow 0.4s linear;
+  animation: brand-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes brand-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.brand-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.42em;
+  color: #eaf7ff;
+  text-shadow: 0 0 18px rgba(56, 232, 255, 0.45);
+}
+
+.brand-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.hud-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(56, 232, 255, 0.06);
+  transition: color 0.4s linear, border-color 0.4s linear;
+  white-space: nowrap;
+}
+
+.chip-dim {
+  color: var(--text-dim);
+  background: none;
+}
+
+.chip-dim[data-link="live"] { color: #55e6a5; }
+.chip-dim[data-link="down"] { color: #ff6b6b; }
+
+/* ---------- stage ---------- */
+
+.stage {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orb-wrap {
+  position: relative;
+  width: min(58vh, 62vw);
+  aspect-ratio: 1 / 1;
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.4s linear;
+}
+
+#orb {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: pointer;
+}
+
+/* Docked: the camera panel takes the stage and the face steps aside.
+ * A CSS transform, not a re-layout — the canvas keeps its backing-store
+ * size, so nothing re-rasterises and the animation never stutters. */
+body.camera-open .orb-wrap {
+  transform: translate(-30vw, 26vh) scale(0.32);
+  opacity: 0.92;
+}
+
+.orb-hint {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.orb-hint kbd {
+  font-family: inherit;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--text);
+}
+
+/* ---------- camera panel ---------- */
+
+.camera-panel {
+  position: fixed;
+  z-index: 2;
+  top: 84px;
+  right: 24px;
+  bottom: 138px;
+  width: min(56vw, 720px);
+  opacity: 0;
+  transform: translateX(28px);
+  pointer-events: none;
+  transition: opacity 0.45s ease, transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+body.camera-open .camera-panel {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.cam-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  background: #02040a;
+  overflow: hidden;
+  box-shadow: 0 0 60px rgba(0, 0, 0, 0.7), inset 0 0 80px rgba(0, 0, 0, 0.6);
+}
+
+.cam-frame img,
+.cam-frame canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* Corner brackets — the techy-chrome detail, drawn in CSS so the server
+ * never has to burn a frame on decoration. */
+.cam-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--accent);
+  transition: border-color 0.4s linear;
+}
+.cam-corner.tl { top: 10px; left: 10px; border-right: 0; border-bottom: 0; }
+.cam-corner.tr { top: 10px; right: 10px; border-left: 0; border-bottom: 0; }
+.cam-corner.bl { bottom: 34px; left: 10px; border-right: 0; border-top: 0; }
+.cam-corner.br { bottom: 34px; right: 10px; border-left: 0; border-top: 0; }
+
+.cam-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(56, 232, 255, 0.045) 0px,
+    rgba(56, 232, 255, 0.045) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+}
+
+.cam-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  background: rgba(4, 8, 14, 0.92);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.cam-dim { color: var(--text-dim); margin-left: auto; }
+.cam-dim + .cam-dim { margin-left: 0; }
+
+.rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff4d4d;
+  box-shadow: 0 0 8px #ff4d4d;
+  animation: brand-pulse 1.4s ease-in-out infinite;
+}
+
+.cam-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 20px;
+}
+
+/* ---------- caption bar ---------- */
+
+.caption {
+  position: relative;
+  z-index: 3;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(to top, rgba(5, 8, 14, 0.95), transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 112px;
+}
+
+.caption-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.caption-key {
+  flex: 0 0 52px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+}
+
+.caption-text {
+  color: var(--text);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.caption-text.aura { color: #eaf7ff; }
+
+.caption-text.pending { color: var(--text-dim); font-style: italic; }
+
+/* What AURA said unprompted. Dimmer than a reply, because it is
+ * background — but present, because the drop-don't-queue policy is only
+ * honest if you can see that a line was dropped. */
+.ambient-row .caption-key { opacity: 0.75; }
+.ambient-row .caption-text { color: var(--text-dim); font-size: 12px; }
+
+.caption-tag {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: 10px;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 176, 32, 0.45);
+  border-radius: 3px;
+  color: var(--amber);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.caption-controls {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+button.ctl {
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: rgba(10, 16, 26, 0.8);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+button.ctl:hover {
+  color: var(--accent);
+  border-color: var(--line-bright);
+}
+
+button.ctl[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--line-bright);
+  background: rgba(56, 232, 255, 0.08);
+}
+
+/* ---------- toast ---------- */
+
+.toast {
+  position: fixed;
+  z-index: 5;
+  left: 50%;
+  bottom: 132px;
+  transform: translateX(-50%) translateY(8px);
+  padding: 9px 16px;
+  border: 1px solid var(--line-bright);
+  border-radius: 3px;
+  background: rgba(8, 14, 22, 0.95);
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  max-width: min(76vw, 560px);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.error {
+  border-color: rgba(255, 107, 107, 0.6);
+  color: #ffc9c9;
+}
+
+@media (max-width: 720px) {
+  .brand-sub { display: none; }
+  .camera-panel { left: 16px; right: 16px; width: auto; top: 76px; }
+  body.camera-open .orb-wrap { transform: translate(-24vw, 22vh) scale(0.3); }
+  .orb-wrap { width: min(46vh, 78vw); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-wrap, .camera-panel, .toast { transition-duration: 0.01ms; }
+  .brand-mark, .rec-dot { animation: none; }
+}
