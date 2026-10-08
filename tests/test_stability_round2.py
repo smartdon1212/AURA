@@ -260,7 +260,35 @@ class ConnectTimeoutTests(unittest.TestCase):
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == "connect"
         ]
-        self.assertEqual(len(connects), 4, "expected four psycopg.connect sites")
+
+        # Named rather than merely counted. A bare count would be satisfied
+        # by removing one site and adding another — the trading of a bounded
+        # connect for an unbounded one, which is the exact regression this
+        # guards. Naming them makes any addition a deliberate edit here.
+        sites = {
+            function.name
+            for function in ast.walk(tree)
+            if isinstance(function, ast.FunctionDef)
+            for call in ast.walk(function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "connect"
+        }
+        self.assertEqual(
+            sites,
+            {
+                "_ensure_schema",
+                "write",
+                "recent",
+                "seen_recently",
+                "record_turn",
+                "recent_turns",
+            },
+            "a psycopg.connect site was added or removed in store.py — every "
+            "one of them must pass connect_timeout (see the constant's "
+            "comment before changing this list)",
+        )
+
         for call in connects:
             keywords = {k.arg for k in call.keywords}
             self.assertIn("connect_timeout", keywords)

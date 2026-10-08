@@ -53,17 +53,38 @@ class LauncherOwnsTheConsoleTests(unittest.TestCase):
         self.main = _function(self.path, "main")
 
     def test_body_is_not_a_child_process(self) -> None:
-        targets = None
-        for node in ast.walk(self.main):
-            if isinstance(node, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id == "targets" for t in node.targets
-            ):
-                targets = node.value
+        """
+        Scoped to the *desktop* branch: `main()` now has two `targets`
+        dicts, one per branch of `if args.web:`.
 
-        self.assertIsNotNone(targets, "targets dict not found in main()")
+        The rule being protected is unchanged, and it was always a
+        desktop-mode rule — the console Body needs stdin, and a spawn child
+        on Windows does not reliably have one. The web Body needs no stdin,
+        so it is *allowed* to be a child; that branch's dict is asserted by
+        tests/test_web_body.py::LauncherWebModeTests instead.
+
+        The web branch's dict is nested inside the `if`, so taking only the
+        top-level assignments picks out the desktop one unambiguously.
+        """
+        top_level = [
+            node
+            for node in self.main.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(t, ast.Name) and t.id == "targets" for t in node.targets
+            )
+        ]
+        self.assertEqual(
+            len(top_level),
+            1,
+            "expected exactly one top-level targets dict in main() — the web "
+            "branch's must stay nested inside `if args.web:`, or this test "
+            "can no longer tell which mode it is asserting about",
+        )
+
         keys = {
             k.value
-            for k in targets.keys  # type: ignore[attr-defined]
+            for k in top_level[0].value.keys  # type: ignore[attr-defined]
             if isinstance(k, ast.Constant)
         }
         self.assertEqual(
@@ -132,7 +153,28 @@ class LauncherOwnsTheConsoleTests(unittest.TestCase):
             "Body can now return (dead stdin) as well as be interrupted, "
             "and both have to stop the services",
         )
-        self.assertIn("terminate()", source)
+        # `terminate()` itself now lives in `_stop_workers()`, which was
+        # extracted when main() grew its second branch. Follow it there
+        # rather than asserting on main()'s own text: what matters is that
+        # shutdown actually terminates the children, not where the call is
+        # spelled — and both branches reach it through a finally.
+        self.assertTrue(
+            any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "_stop_workers"
+                for node in ast.walk(self.main)
+                if isinstance(node, ast.Try)
+                for statement in node.finalbody
+                for call in ast.walk(statement)
+            ),
+            "main() must reach _stop_workers() from a finally block — "
+            "otherwise Ctrl+C, or the Body returning on dead stdin, leaves "
+            "the services running",
+        )
+
+        stop_workers = _function(self.path, "_stop_workers")
+        self.assertIn("terminate()", ast.unparse(stop_workers))
 
 
 class ConversationDegradesGracefullyTests(unittest.TestCase):

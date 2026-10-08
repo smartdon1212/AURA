@@ -16,6 +16,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
+from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -36,6 +37,26 @@ CREATE TABLE IF NOT EXISTS percepts (
 );
 CREATE INDEX IF NOT EXISTS idx_percepts_ts ON percepts (ts DESC);
 CREATE INDEX IF NOT EXISTS idx_percepts_type ON percepts (type);
+"""
+
+# What was *said*, as opposed to what was *seen*. Deliberately a separate
+# table from `percepts`, because the two are different kinds of claim:
+# a percept is evidence AURA gathered with her own sensors, a turn is
+# something that passed between her and a person.
+#
+# Keeping them apart is what stops a question ("is that a cat?") being
+# recalled later as though she had observed a cat. The QA prompt leans on
+# that distinction explicitly.
+CONVERSATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS conversation_turns (
+    id UUID PRIMARY KEY,
+    ts TIMESTAMPTZ NOT NULL,
+    source_body_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_turns_ts
+    ON conversation_turns (ts DESC);
 """
 
 _DEFAULT_HOST = "localhost"
@@ -122,6 +143,7 @@ class EpisodicMemory:
             self._dsn, connect_timeout=_CONNECT_TIMEOUT
         ) as conn:
             conn.execute(SCHEMA)
+            conn.execute(CONVERSATION_SCHEMA)
             conn.commit()
 
     def write(self, percept: Percept) -> None:
@@ -179,3 +201,63 @@ class EpisodicMemory:
                 (since, label),
             ).fetchone()
         return row is not None
+
+    # -------------------------------------------------------- conversation
+
+    def record_turn(self, question: str, answer: str, source_body_id: str) -> None:
+        """
+        Persist one exchange.
+
+        Stored unconditionally rather than only when the answer seemed
+        worth keeping: "what did I ask you earlier" has to work for the
+        dull questions too, and there is no cheap way to know at write
+        time which ones the person will later consider worth recalling.
+        """
+        with psycopg.connect(
+            self._dsn, connect_timeout=_CONNECT_TIMEOUT
+        ) as conn:
+            conn.execute(
+                """
+                INSERT INTO conversation_turns
+                    (id, ts, source_body_id, question, answer)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    str(uuid4()),
+                    datetime.now(timezone.utc),
+                    source_body_id,
+                    question,
+                    answer,
+                ),
+            )
+            conn.commit()
+
+    def recent_turns(self, limit: int = 10) -> list[dict]:
+        """
+        The last `limit` exchanges, **oldest first**.
+
+        Reversed deliberately: the query takes the newest rows, but a
+        conversation has to be read forwards, or the prompt describes an
+        answer before the question that prompted it.
+
+        Not filtered by `source_body_id`, also deliberately. The Body
+        records *where* an exchange happened, but recall is not scoped to
+        it: AURA is one mind with one memory, and the Body is the device
+        she happens to be speaking through. Scoping recall per Body would
+        mean the desktop and the web console each remembered a different
+        half of the same afternoon — which is exactly the split this
+        architecture exists to avoid. Filter here only if that changes.
+        """
+        with psycopg.connect(
+            self._dsn, row_factory=dict_row, connect_timeout=_CONNECT_TIMEOUT
+        ) as conn:
+            rows = conn.execute(
+                """
+                SELECT ts, question, answer
+                FROM conversation_turns
+                ORDER BY ts DESC
+                LIMIT %s
+                """,
+                (limit,),
+            ).fetchall()
+        return list(reversed(rows))

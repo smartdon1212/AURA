@@ -152,5 +152,78 @@ class ConnectTimeoutTests(_PasswordEnvMixin, unittest.TestCase):
         self.assertIn("_CONNECT_TIMEOUT", source)
 
 
+class ConversationStoreTests(_PasswordEnvMixin, unittest.TestCase):
+    """
+    The conversation_turns table, added 2026-10-08.
+
+    Same stub as above — no Postgres is touched. What is being pinned is
+    that the new table is created alongside `percepts`, that its connects
+    are bounded like every other one, and that it is read forwards.
+    """
+
+    def _memory_under_stub(self):
+        from unittest import mock
+
+        patcher = mock.patch.object(store.psycopg, "connect")
+        connect = patcher.start()
+        self.addCleanup(patcher.stop)
+        conn = connect.return_value.__enter__.return_value
+        conn.execute.return_value.fetchall.return_value = []
+        conn.execute.return_value.fetchone.return_value = None
+        return connect, conn, store.EpisodicMemory(dsn="postgresql://u:p@h:5432/d")
+
+    def test_schema_creates_the_conversation_table(self) -> None:
+        _, conn, _ = self._memory_under_stub()
+        executed = " ".join(str(call.args[0]) for call in conn.execute.call_args_list)
+        self.assertIn("conversation_turns", executed)
+        self.assertIn("percepts", executed, "the original table must still be created")
+
+    def test_the_two_tables_are_separate(self) -> None:
+        """A said thing must not be stored where a seen thing is queried from."""
+        self.assertIn("conversation_turns", store.CONVERSATION_SCHEMA)
+        self.assertNotIn("conversation_turns", store.SCHEMA)
+        self.assertNotIn("percepts", store.CONVERSATION_SCHEMA)
+
+    def test_record_turn_connect_is_bounded(self) -> None:
+        connect, _, memory = self._memory_under_stub()
+        memory.record_turn("q", "a", "desktop-01")
+        self.assertEqual(
+            connect.call_args_list[-1].kwargs["connect_timeout"], store._CONNECT_TIMEOUT
+        )
+
+    def test_recent_turns_connect_is_bounded(self) -> None:
+        connect, _, memory = self._memory_under_stub()
+        memory.recent_turns()
+        self.assertEqual(
+            connect.call_args_list[-1].kwargs["connect_timeout"], store._CONNECT_TIMEOUT
+        )
+
+    def test_record_turn_writes_the_exchange(self) -> None:
+        _, conn, memory = self._memory_under_stub()
+        memory.record_turn("what is a prime number?", "a number with two factors", "web-01")
+        params = conn.execute.call_args_list[-1].args[1]
+        self.assertEqual(params[2], "web-01")
+        self.assertEqual(params[3], "what is a prime number?")
+        self.assertEqual(params[4], "a number with two factors")
+
+    def test_recent_turns_reads_oldest_first(self) -> None:
+        """
+        The query takes the newest rows; the caller gets them reversed, so
+        the prompt never describes an answer before its question.
+        """
+        _, conn, memory = self._memory_under_stub()
+        conn.execute.return_value.fetchall.return_value = [
+            {"ts": "t2", "question": "second", "answer": "b"},
+            {"ts": "t1", "question": "first", "answer": "a"},
+        ]
+        rows = memory.recent_turns()
+        self.assertEqual([row["question"] for row in rows], ["first", "second"])
+
+    def test_recent_turns_passes_the_limit_through(self) -> None:
+        _, conn, memory = self._memory_under_stub()
+        memory.recent_turns(limit=7)
+        self.assertEqual(conn.execute.call_args_list[-1].args[1], (7,))
+
+
 if __name__ == "__main__":
     unittest.main()
