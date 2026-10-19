@@ -8,6 +8,16 @@ is a future addition, not a rewrite. The web Body is the first real test
 of that claim: it added no code to Mind, Memory, the bus or the
 contracts.
 
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+## At a glance
+
+- **Stack:** Python 3.12, Pydantic contracts, Redis Streams event bus, Postgres, OpenCV + YOLOv8n (CPU-first), FastAPI web Body, Gemini (free tier) behind a swappable `LLMProvider`.
+- **Runs on generic hardware:** no dedicated GPU needed for v1; developed on Windows, designed to move to Linux.
+- **Design idea:** services only talk through typed `Percept` and `Action` messages, so a robot Body can plug in later without touching Mind or Memory.
+- **Docs:** [Architecture](docs/ARCHITECTURE.md) · [Problems AURA should solve](Problems_AURA_Solve.md) · [Project state log](docs/PROJECT_STATE.md)
+
 ## What v1 actually does
 
 Looks through your webcam, notices objects, remembers what it's seen,
@@ -208,3 +218,7 @@ encodes a WAV header in the page so the bytes reaching the transcriber
 are the same format `perception/voice.py` produces on the desktop path.
 It speaks with the browser's own `speechSynthesis`, so `pyttsx3` is not
 involved in web mode.
+
+## License
+
+[MIT](LICENSE)

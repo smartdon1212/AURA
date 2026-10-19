@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # System libraries needed to import the audio/vision dependencies
+      # (sounddevice, pyttsx3's eSpeak backend, OpenCV). The tests stub the
+      # hardware itself, so no devices are required.
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2 libgl1 libespeak1
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run python -m unittest discover -s tests -v
